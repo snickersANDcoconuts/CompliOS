@@ -2426,7 +2426,28 @@ const APP_STORAGE_KEYS = {
   register: 'register',
   taskResetV1: 'taskResetV1',
   documentsResetV1: 'documentsResetV1',
+  currentPage: 'currentPage',
+  onboardingCompleted: 'onboardingCompleted',
 };
+
+
+function isValidPage(page) {
+  return ['dashboard', 'register', 'audits', 'actions', 'people', 'docs', 'settings'].includes(page);
+}
+
+function getStoredPage() {
+  const savedPage = localStorage.getItem(APP_STORAGE_KEYS.currentPage);
+  return isValidPage(savedPage) ? savedPage : 'dashboard';
+}
+
+function hasCompletedOnboarding() {
+  if (localStorage.getItem(APP_STORAGE_KEYS.onboardingCompleted) === '1') return true;
+  return Boolean(plantState.plantName || plantState.city || plantState.state);
+}
+
+function markOnboardingCompleted() {
+  localStorage.setItem(APP_STORAGE_KEYS.onboardingCompleted, '1');
+}
 
 function clearLegacyTasksOnce() {
   if (localStorage.getItem(APP_STORAGE_KEYS.taskResetV1) === '1') return;
@@ -2610,8 +2631,9 @@ function runOnboardingLoad() {
       setOnboardingIcon('success');
       msg.textContent = 'Your workspace is ready!';
       setTimeout(() => {
+        markOnboardingCompleted();
         document.getElementById('onboard-modal').style.display = 'none';
-        showPage('dashboard');
+        showPage(getStoredPage());
         showToast('✅ CompliOS configured · Workspace starts empty', 'success');
       }, 1400);
       return;
@@ -2631,8 +2653,11 @@ function updateSidebarBadges() {
 }
 
 function showPage(page) {
+  const pages = { dashboard, register, audits, actions, people, docs, settings };
+  const activePage = pages[page] ? page : 'dashboard';
+
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  const navEl = document.getElementById('nav-' + page);
+  const navEl = document.getElementById('nav-' + activePage);
   if (navEl) navEl.classList.add('active');
 
   const titles = {
@@ -2644,18 +2669,16 @@ function showPage(page) {
     docs:      'Documents & Evidence',
     settings:  'Settings',
   };
-  document.getElementById('topbar-title').textContent = titles[page] || page;
+  document.getElementById('topbar-title').textContent = titles[activePage] || activePage;
 
   updateSidebarBadges();
 
   const content = document.getElementById('content');
   content.innerHTML = '';
 
-  const pages = { dashboard, register, audits, actions, people, docs, settings };
-  if (pages[page]) {
-    content.innerHTML = pages[page]();
-    afterRender(page);
-  }
+  content.innerHTML = pages[activePage]();
+  localStorage.setItem(APP_STORAGE_KEYS.currentPage, activePage);
+  afterRender(activePage);
 }
 
 function afterRender(page) {
@@ -4506,6 +4529,14 @@ hydrateOnboardingPlantInputs();
 document.getElementById('new-freq').addEventListener('change', updateCustomFrequencyFields);
 resetCreateChecklistForm();
 updateSidebarBadges();
+
+if (hasCompletedOnboarding()) {
+  document.getElementById('onboard-modal').style.display = 'none';
+  showPage(getStoredPage());
+} else {
+  showPage('dashboard');
+}
+
 window.onload = function () {
   checkIfCanComplete();
 };
