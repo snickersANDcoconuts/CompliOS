@@ -4225,7 +4225,6 @@ function docs() {
       <div class="doc-tree">
         ${folders.map(f => `
         <div class="doc-tree-item ${activeFolder===f?'active':''} ${f!=='All'?'sub':''}" onclick="switchFolder('${f}')">
-          <span>${f==='All'?'🗂':f==='Licenses'?'📋':f==='PF/ESI'?'💼':f==='Audits'?'✅':f==='OEM'?'🏭':f==='Safety'?'🦺':'⚠'}</span>
           ${f}
           <span style="margin-left:auto;font-family:var(--font-m);font-size:10px;color:var(--muted)">${f==='All'?visibleDocs.length:visibleDocs.filter(d=>d.folder===f).length}</span>
         </div>`).join('')}
