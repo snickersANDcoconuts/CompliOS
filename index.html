@@ -2980,7 +2980,7 @@ function getRegisterStatusKey(status) {
   return ['overdue', 'due', 'in_progress', 'complete'].includes(normalized) ? normalized : 'in_progress';
 }
 
-function getRegisterStatusMeta(status, daysLeft = 0) {
+function getRegisterStatusMeta(status) {
   const key = getRegisterStatusKey(status);
   if (key === 'overdue') return { key, chip: 'badge-solid-overdue', text: 'Overdue' };
   if (key === 'due') return { key, chip: 'badge-solid-due', text: 'Due' };
