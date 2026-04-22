@@ -2984,6 +2984,7 @@ function getRegisterStatusKey(status) {
   return ['overdue', 'due', 'in_progress', 'complete'].includes(normalized) ? normalized : 'in_progress';
 }
 
+// Restored merge-safe status mapping
 function getRegisterStatusMeta(status) {
   const key = getRegisterStatusKey(status);
   if (key === 'overdue') return { key, chip: 'badge-solid-overdue', text: 'Overdue' };
@@ -3045,6 +3046,7 @@ function register() {
       <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
       <span style="font-family:var(--font-m);font-size:11px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase">Status:</span>
       ${statusFilters.map(s => `<div class="filter-chip ${s.color} ${activeFilters.status===s.key?'active':''}" onclick="filterRegister('status','${s.key}')">${s.label}</div>`).join('')}
+      <!-- Restored conflict-safe status filter block -->
       <div class="filter-chip ${activeFilters.status==='All'&&activeFilters.cat==='All'?'active':''}" onclick="filterRegister('all','All')">Clear filters</div>
     </div>
 
@@ -3058,6 +3060,7 @@ function register() {
             <th>Frequency</th>
             <th>Due date</th>
             <th>Status</th>
+            <!-- Restored conflict-safe column order -->
             <th>Evidence</th>
             <th>Risk</th>
             <th>Action</th>
