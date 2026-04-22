@@ -2968,25 +2968,55 @@ let activeFilters = { cat: 'All', status: 'All' };
 let activeSearchQuery = '';
 let actionViewMode = 'kanban';
 
+function getRegisterStatusKey(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'ok') return 'complete';
+  if (normalized === 'due soon') return 'due';
+  return ['overdue', 'due', 'in_progress', 'complete'].includes(normalized) ? normalized : 'in_progress';
+}
+
+function getRegisterStatusMeta(status, daysLeft = 0) {
+  const key = getRegisterStatusKey(status);
+  if (key === 'overdue') return { key, chip: 'badge-overdue', text: `OVERDUE${daysLeft ? ` · ${Math.abs(daysLeft)}d` : ''}` };
+  if (key === 'due') return { key, chip: 'badge-due', text: daysLeft > 0 ? `DUE IN ${daysLeft}d` : 'DUE SOON' };
+  if (key === 'complete') return { key, chip: 'badge-ok', text: 'COMPLETE' };
+  return { key, chip: 'badge-info', text: 'IN PROGRESS' };
+}
+
+function getRegisterProgress(status) {
+  const key = getRegisterStatusKey(status);
+  if (key === 'overdue') return 20;
+  if (key === 'due') return 55;
+  if (key === 'complete') return 100;
+  return 72;
+}
+
+function getEvidenceLabel(row) {
+  if (row.evidence) return '<span style="color:var(--green-d)">✓ Filed</span>';
+  return '<span style="color:var(--red)">⚠ Missing</span>';
+}
+
 function getRegisterRows() {
   let rows = DATA.register;
-  if (activeFilters.cat !== 'All')    rows = rows.filter(r => r.cat === activeFilters.cat);
-  if (activeFilters.status !== 'All') rows = rows.filter(r => r.status === activeFilters.status);
+  if (activeFilters.cat !== 'All')    rows = rows.filter(r => (r.cat || '').toLowerCase() === activeFilters.cat.toLowerCase());
+  if (activeFilters.status !== 'All') rows = rows.filter(r => getRegisterStatusKey(r.status) === activeFilters.status);
   if (activeSearchQuery) {
     const q = activeSearchQuery.toLowerCase();
     rows = rows.filter(r =>
-      r.name.toLowerCase().includes(q) ||
-      r.cat.toLowerCase().includes(q) ||
-      r.law.toLowerCase().includes(q) ||
-      r.owner.toLowerCase().includes(q)
+      (r.name || '').toLowerCase().includes(q) ||
+      (r.cat || '').toLowerCase().includes(q) ||
+      (r.law || '').toLowerCase().includes(q) ||
+      (r.section || '').toLowerCase().includes(q) ||
+      (r.owner || '').toLowerCase().includes(q) ||
+      (r.risk || '').toLowerCase().includes(q)
     );
   }
   return rows;
 }
 
 function register() {
-  const cats = ['All','Statutory','Environment','Safety','PF/ESI','OEM'];
-  const statuses = ['All','overdue','due','ok'];
+  const cats = ['All','Safety','Labour','Environment','Tax','Certification','Factory'];
+  const statuses = ['All','overdue','due','in_progress','complete'];
   return `
   <div class="fade-up">
     <div class="page-header">
@@ -3005,9 +3035,7 @@ function register() {
       ${cats.map(c => `<div class="filter-chip ${activeFilters.cat===c?'active':''}" onclick="filterRegister('cat','${c}')">${c}</div>`).join('')}
       <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
       <span style="font-family:var(--font-m);font-size:11px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase">Status:</span>
-      <div class="filter-chip red ${activeFilters.status==='overdue'?'active':''}" onclick="filterRegister('status','overdue')">🔴 Overdue</div>
-      <div class="filter-chip orange ${activeFilters.status==='due'?'active':''}" onclick="filterRegister('status','due')">🟡 Due</div>
-      <div class="filter-chip green ${activeFilters.status==='ok'?'active':''}" onclick="filterRegister('status','ok')">🟢 OK</div>
+      ${statuses.filter(s => s !== 'All').map(s => `<div class="filter-chip ${activeFilters.status===s?'active':''}" onclick="filterRegister('status','${s}')">${s.replace('_',' ').toUpperCase()}</div>`).join('')}
       <div class="filter-chip ${activeFilters.status==='All'&&activeFilters.cat==='All'?'active':''}" onclick="filterRegister('all','All')">Clear filters</div>
     </div>
 
@@ -3015,14 +3043,15 @@ function register() {
       <table class="data-table" id="register-table">
         <thead>
           <tr>
-            <th>Obligation</th>
-            <th>Category</th>
-            <th>Law / Framework</th>
+            <th>Obligation name</th>
+            <th>Law / section</th>
             <th>Owner</th>
             <th>Frequency</th>
-            <th>Due Date</th>
+            <th>Due date</th>
             <th>Status</th>
             <th>Evidence</th>
+            <th>Risk</th>
+            <th>Action</th>
           </tr>
         </thead>
         <tbody id="register-tbody">
@@ -3037,22 +3066,50 @@ function renderRegisterRows(rows) {
   if (!rows.length) {
     return `
     <tr>
-      <td colspan="8" style="padding:22px;text-align:center;color:var(--muted)">
+      <td colspan="9" style="padding:22px;text-align:center;color:var(--muted)">
         No matching obligations found. Try a different search or clear filters.
       </td>
     </tr>`;
   }
-  return rows.map(r => `
+  return rows.map(r => {
+    const statusMeta = getRegisterStatusMeta(r.status, r.daysLeft);
+    const progress = getRegisterProgress(statusMeta.key);
+    const risk = (r.risk || 'medium').toLowerCase();
+    const riskChip = risk === 'critical' ? 'badge-overdue' : risk === 'high' ? 'badge-due' : risk === 'low' ? 'badge-ok' : 'badge-info';
+    const nextAction = r.nextAction || (statusMeta.key === 'overdue' ? 'Escalate and file immediately' : statusMeta.key === 'complete' ? 'Archive and monitor renewal' : 'Prepare evidence package');
+    return `
   <tr onclick="showRegisterDetail('${r.id}')">
-    <td class="cell-primary">${r.name}</td>
-    <td><span class="badge badge-info">${r.cat}</span></td>
-    <td class="cell-muted">${r.law}</td>
-    <td style="font-size:12px">${r.owner}</td>
-    <td class="cell-mono">${r.freq}</td>
-    <td class="cell-mono">${r.due}</td>
-    <td><span class="badge ${r.status==='overdue'?'badge-overdue':r.status==='due'?'badge-due':'badge-ok'}">${r.status==='overdue'?'OVERDUE':r.status==='due'?'DUE IN '+r.daysLeft+'d':'OK'}</span></td>
-    <td>${r.evidence ? '<span style="color:var(--green-d)">✓ Filed</span>' : '<span style="color:var(--red)">⚠ Missing</span>'}</td>
-  </tr>`).join('');
+    <td class="cell-primary">
+      <div style="font-weight:600;color:var(--charcoal)">${r.name}</div>
+      <div class="cell-muted" style="font-size:11px">${r.cat || 'Uncategorized'} · ${r.plant || (getActivePlantLocation() || getActivePlantName())}</div>
+    </td>
+    <td class="cell-muted">${r.law || '—'}<br/><span style="font-size:11px;color:var(--muted)">${r.section || 'Section not set'}</span></td>
+    <td style="font-size:12px">
+      <div>${r.owner || 'Unassigned'}</div>
+      <div class="cell-muted" style="font-size:11px">${r.department || 'Dept: Not set'}</div>
+    </td>
+    <td class="cell-mono">${r.freq || 'One-time'}</td>
+    <td class="cell-mono">${r.due || '—'}<br/><span style="font-size:11px;color:var(--muted)">Reminder: ${r.reminderDate || 'Not set'}</span></td>
+    <td>
+      <span class="badge ${statusMeta.chip}">${statusMeta.text}</span>
+      <div style="margin-top:6px;height:4px;background:var(--surface-2);border-radius:999px;overflow:hidden">
+        <div style="height:100%;width:${progress}%;background:${statusMeta.key==='overdue'?'var(--red)':statusMeta.key==='due'?'var(--amber)':statusMeta.key==='complete'?'var(--green-d)':'var(--navy-light)'}"></div>
+      </div>
+    </td>
+    <td>
+      <div>${getEvidenceLabel(r)}</div>
+      <div style="font-size:11px;color:var(--muted)">${r.requiredEvidence || 'Proof of filing + acknowledgement'}</div>
+    </td>
+    <td>
+      <span class="badge ${riskChip}">${risk.toUpperCase()}</span>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">Updated: ${r.lastUpdated || getTodayISO()}</div>
+    </td>
+    <td>
+      <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();showToast('${nextAction}','info')">${r.quickActionLabel || 'Take action'}</button>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">${nextAction}</div>
+    </td>
+  </tr>`;
+  }).join('');
 }
 
 function filterRegister(key, val) {
@@ -3067,32 +3124,62 @@ function filterRegister(key, val) {
 function showRegisterDetail(id) {
   const r = DATA.register.find(x => x.id === id);
   if (!r) return;
+  const statusMeta = getRegisterStatusMeta(r.status, r.daysLeft);
+  const risk = (r.risk || 'medium').toUpperCase();
+  const evidenceFiles = Array.isArray(r.evidenceFiles) && r.evidenceFiles.length
+    ? r.evidenceFiles
+    : [r.evidence ? 'Filed acknowledgement.pdf' : 'No evidence uploaded'];
+  const comments = Array.isArray(r.comments) && r.comments.length
+    ? r.comments
+    : ['No comments yet.'];
+  const history = Array.isArray(r.history) && r.history.length
+    ? r.history
+    : [
+      { date: r.lastUpdated || getTodayISO(), text: 'Row reviewed and synced in register.', color: 'var(--navy-light)' },
+      { date: r.due || '—', text: 'Due date monitored for this obligation.', color: 'var(--amber-l)' },
+    ];
+  const auditTrail = Array.isArray(r.auditTrail) && r.auditTrail.length
+    ? r.auditTrail
+    : [
+      { date: r.lastUpdated || getTodayISO(), actor: r.reviewer || 'Compliance reviewer', action: 'Reviewed obligation row' },
+      { date: r.completionDate || 'Pending', actor: r.owner || 'Owner', action: r.evidence ? 'Evidence uploaded' : 'Evidence pending' },
+    ];
+
   document.getElementById('drawer-title').textContent = r.name;
-  document.getElementById('drawer-sub').textContent = r.cat + ' · ' + r.plant;
+  document.getElementById('drawer-sub').textContent = `${r.cat || 'Compliance'} · ${r.plant || (getActivePlantLocation() || getActivePlantName())}`;
   document.getElementById('drawer-body').innerHTML = `
-    <div style="margin-bottom:20px">
-      <span class="badge ${r.status==='overdue'?'badge-overdue':r.status==='due'?'badge-due':'badge-ok'}" style="font-size:12px;padding:5px 14px">${r.status==='overdue'?'⚠ OVERDUE':r.status==='due'?'⚡ DUE SOON':'✅ COMPLIANT'}</span>
+    <div style="margin-bottom:14px">
+      <span class="badge ${statusMeta.chip}" style="font-size:12px;padding:5px 14px">${statusMeta.text}</span>
+      <span class="badge badge-info" style="margin-left:8px">RISK ${risk}</span>
     </div>
-    <div>
-      ${[
-        ['Category', r.cat],
-        ['Law / Framework', r.law],
-        ['Plant', r.plant],
-        ['Owner', r.owner],
-        ['Renewal Frequency', r.freq],
-        ['Next Due Date', r.due],
-        ['Days Left', r.daysLeft < 0 ? `<span style="color:var(--red);font-weight:700">${Math.abs(r.daysLeft)} days overdue</span>` : r.daysLeft > 100 ? 'Not urgent' : `<span style="color:var(--amber)">${r.daysLeft} days remaining</span>`],
-        ['Potential Fine', `<span style="color:var(--red)">${r.fine}</span>`],
-        ['Evidence on File', r.evidence ? '<span style="color:var(--green-d)">✓ Uploaded</span>' : '<span style="color:var(--red)">⚠ Missing — upload required</span>'],
-        ['Portal Link', `<a href="${r.portal}" target="_blank" style="color:var(--orange);text-decoration:none">${r.portal === '#' ? 'N/A' : '🔗 Open portal'}</a>`],
-      ].map(([l,v]) => `<div class="detail-row"><div class="detail-label">${l}</div><div class="detail-val">${v}</div></div>`).join('')}
-    </div>
+
+    <div class="detail-row"><div class="detail-label">Obligation explanation</div><div class="detail-val">${r.description || 'This obligation ensures statutory compliance and timely filing to avoid legal and operational disruption.'}</div></div>
+    <div class="detail-row"><div class="detail-label">Law / regulation</div><div class="detail-val">${r.law || '—'} · ${r.section || 'Section not set'}</div></div>
+    <div class="detail-row"><div class="detail-label">Penalty / fine risk</div><div class="detail-val"><span style="color:var(--red)">${r.fine || 'Penalty not configured'}</span></div></div>
+    <div class="detail-row"><div class="detail-label">Required evidence</div><div class="detail-val">${r.requiredEvidence || 'Filing copy, challan, acknowledgement screenshot'}</div></div>
+    <div class="detail-row"><div class="detail-label">Owner</div><div class="detail-val">${r.owner || 'Unassigned'} · ${r.department || 'Dept not set'}</div></div>
+    <div class="detail-row"><div class="detail-label">Reviewer / approver</div><div class="detail-val">${r.reviewer || 'Not assigned'}</div></div>
+    <div class="detail-row"><div class="detail-label">Frequency</div><div class="detail-val">${r.freq || 'One-time'}</div></div>
+    <div class="detail-row"><div class="detail-label">Due / reminder / completion</div><div class="detail-val">Due: ${r.due || '—'} · Reminder: ${r.reminderDate || '—'} · Completed: ${r.completionDate || 'Pending'}</div></div>
+    <div class="detail-row"><div class="detail-label">Last updated</div><div class="detail-val">${r.lastUpdated || getTodayISO()}</div></div>
+    <div class="detail-row"><div class="detail-label">Next action</div><div class="detail-val">${r.nextAction || 'Prepare documents and submit before due date.'}</div></div>
+
     <div class="divider"></div>
-    <div class="card-title" style="margin-bottom:12px">History</div>
-    ${[
-      {date:r.due || '—', text:'Obligation due date tracked by the system.', color:'var(--amber-l)'},
-      {date:getTodayISO(), text:'Review status updates and upload evidence here.', color:'var(--navy-light)'},
-    ].map(h => `<div class="history-item"><div class="history-dot" style="background:${h.color}"></div><div><div class="history-date">${h.date}</div><div class="history-text">${h.text}</div></div></div>`).join('')}
+    <div class="card-title" style="margin-bottom:10px">Evidence files</div>
+    ${evidenceFiles.map(file => `<div class="history-item"><div class="history-dot" style="background:var(--teal)"></div><div><div class="history-text">${file}</div></div></div>`).join('')}
+
+    <div class="divider"></div>
+    <div class="card-title" style="margin-bottom:10px">Comments</div>
+    ${comments.map(comment => `<div style="padding:8px 10px;background:var(--surface);border-radius:8px;margin-bottom:6px;font-size:12px">${comment}</div>`).join('')}
+
+    <div class="divider"></div>
+    <div class="card-title" style="margin-bottom:12px">History of changes</div>
+    ${history.map(h => `<div class="history-item"><div class="history-dot" style="background:${h.color || 'var(--amber-l)'}"></div><div><div class="history-date">${h.date}</div><div class="history-text">${h.text}</div></div></div>`).join('')}
+
+    <div class="divider"></div>
+    <div class="card-title" style="margin-bottom:12px">Audit trail</div>
+    ${auditTrail.map(a => `<div class="history-item"><div class="history-dot" style="background:var(--navy-light)"></div><div><div class="history-date">${a.date}</div><div class="history-text"><strong>${a.actor}</strong> — ${a.action}</div></div></div>`).join('')}
+
     <div class="divider"></div>
     <div class="upload-zone" onclick="showToast('File upload — select document','info')">
       <div class="upload-zone-icon">📎</div>
