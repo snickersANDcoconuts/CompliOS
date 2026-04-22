@@ -2984,12 +2984,12 @@ function getRegisterStatusKey(status) {
   return ['overdue', 'due', 'in_progress', 'complete'].includes(normalized) ? normalized : 'in_progress';
 }
 
-function getRegisterStatusMeta(status) {
+function getRegisterStatusMeta(status, daysLeft = 0) {
   const key = getRegisterStatusKey(status);
-  if (key === 'overdue') return { key, chip: 'badge-solid-overdue', text: 'Overdue' };
-  if (key === 'due') return { key, chip: 'badge-solid-due', text: 'Due' };
-  if (key === 'complete') return { key, chip: 'badge-solid-complete', text: 'Completed' };
-  return { key, chip: 'badge-solid-progress', text: 'In Progress' };
+  if (key === 'overdue') return { key, chip: 'badge-overdue', text: `OVERDUE${daysLeft ? ` · ${Math.abs(daysLeft)}d` : ''}` };
+  if (key === 'due') return { key, chip: 'badge-due', text: daysLeft > 0 ? `DUE IN ${daysLeft}d` : 'DUE SOON' };
+  if (key === 'complete') return { key, chip: 'badge-ok', text: 'COMPLETE' };
+  return { key, chip: 'badge-info', text: 'IN PROGRESS' };
 }
 
 function getRegisterProgress(status) {
@@ -3025,7 +3025,7 @@ function getRegisterRows() {
 
 function register() {
   const cats = ['All','Safety','Labour','Environment','Tax','Certification','Factory'];
-  const statusFilters = [{ key:'overdue', label:'Overdue', color:'red' }, { key:'due', label:'Due', color:'orange' }, { key:'in_progress', label:'In Progress', color:'yellow' }, { key:'complete', label:'Completed', color:'green' }];
+  const statuses = ['All','overdue','due','in_progress','complete'];
   return `
   <div class="fade-up">
     <div class="page-header">
