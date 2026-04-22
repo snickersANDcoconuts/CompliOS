@@ -2367,6 +2367,26 @@ const plantState = {
   state: '',
 };
 
+const USER_STATE_STORAGE_KEY = 'userState';
+const userState = {
+  needsOnboarding: true,
+};
+
+function loadUserStateFromStorage() {
+  const saved = localStorage.getItem(USER_STATE_STORAGE_KEY);
+  if (!saved) return;
+  try {
+    const parsed = JSON.parse(saved);
+    userState.needsOnboarding = parsed?.needsOnboarding !== false;
+  } catch {
+    localStorage.removeItem(USER_STATE_STORAGE_KEY);
+  }
+}
+
+function saveUserStateToStorage() {
+  localStorage.setItem(USER_STATE_STORAGE_KEY, JSON.stringify(userState));
+}
+
 function loadPlantFromStorage() {
   const saved = localStorage.getItem(PLANT_STORAGE_KEY);
   if (!saved) return;
@@ -2553,30 +2573,14 @@ function getStoredPage() {
 }
 
 function hasCompletedOnboarding() {
+  if (userState.needsOnboarding === false) return true;
   if (localStorage.getItem(APP_STORAGE_KEYS.onboardingCompleted) === '1') return true;
   return Boolean(plantState.plantName || plantState.city || plantState.state);
 }
 
 function markOnboardingCompleted() {
-  localStorage.setItem(APP_STORAGE_KEYS.onboardingCompleted, '1');
-}
-
-
-function isValidPage(page) {
-  return ['dashboard', 'register', 'audits', 'actions', 'people', 'docs', 'settings'].includes(page);
-}
-
-function getStoredPage() {
-  const savedPage = localStorage.getItem(APP_STORAGE_KEYS.currentPage);
-  return isValidPage(savedPage) ? savedPage : 'dashboard';
-}
-
-function hasCompletedOnboarding() {
-  if (localStorage.getItem(APP_STORAGE_KEYS.onboardingCompleted) === '1') return true;
-  return Boolean(plantState.plantName || plantState.city || plantState.state);
-}
-
-function markOnboardingCompleted() {
+  userState.needsOnboarding = false;
+  saveUserStateToStorage();
   localStorage.setItem(APP_STORAGE_KEYS.onboardingCompleted, '1');
 }
 
@@ -2768,7 +2772,8 @@ function runOnboardingLoad() {
       setTimeout(() => {
         markOnboardingCompleted();
         document.getElementById('onboard-modal').style.display = 'none';
-        showPage(getStoredPage());
+        setAppRoute('/dashboard');
+        showPage('dashboard');
         showToast('✅ CompliOS configured · Workspace starts empty', 'success');
       }, 1400);
       return;
@@ -2785,6 +2790,31 @@ function runOnboardingLoad() {
 
 function updateSidebarBadges() {
   refreshOverdueTasks();
+}
+
+function getAppRoute() {
+  return window.location.pathname || '/';
+}
+
+function setAppRoute(path) {
+  if (getAppRoute() === path) return;
+  window.history.replaceState({}, '', path);
+}
+
+function shouldShowOnboardingRoute() {
+  return userState.needsOnboarding === true;
+}
+
+function enforceOnboardingRoute() {
+  const onboardingModal = document.getElementById('onboard-modal');
+  if (!onboardingModal) return;
+  if (shouldShowOnboardingRoute()) {
+    setAppRoute('/onboarding');
+    onboardingModal.style.display = 'grid';
+    return;
+  }
+  if (getAppRoute() === '/onboarding') setAppRoute('/dashboard');
+  onboardingModal.style.display = 'none';
 }
 
 function showPage(page) {
@@ -4832,6 +4862,7 @@ function globalSearch(q) {
 // Start with onboarding, then show dashboard after
 // (modal auto-triggers, dashboard shown after completion)
 loadPlantFromStorage();
+loadUserStateFromStorage();
 clearLegacyTasksOnce();
 clearLegacyDocumentsOnce();
 loadAppDataFromStorage();
@@ -4846,9 +4877,15 @@ updateSidebarBadges();
 renderNotifications();
 
 if (hasCompletedOnboarding()) {
-  document.getElementById('onboard-modal').style.display = 'none';
-  showPage(getStoredPage());
+  userState.needsOnboarding = false;
+  saveUserStateToStorage();
+  enforceOnboardingRoute();
+  const routePage = getAppRoute() === '/dashboard' ? 'dashboard' : getStoredPage();
+  showPage(routePage);
 } else {
+  userState.needsOnboarding = true;
+  saveUserStateToStorage();
+  enforceOnboardingRoute();
   showPage('dashboard');
 }
 
