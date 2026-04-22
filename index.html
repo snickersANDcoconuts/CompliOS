@@ -448,6 +448,10 @@ body.page-exit {
 .badge-overdue  { background: #fee2e2;  color: var(--red);      border: 1px solid #fecaca; }
 .badge-info     { background: #dbeafe;   color: var(--orange-d); border: 1px solid #bfdbfe; }
 .badge-pending  { background: #f1f5f9;color: var(--muted);    border: 1px solid #e2e8f0; }
+.badge-solid-overdue { background: #dc2626; color: #fff; border: 1px solid #dc2626; }
+.badge-solid-due { background: #f97316; color: #fff; border: 1px solid #f97316; }
+.badge-solid-progress { background: #eab308; color: #1f2937; border: 1px solid #eab308; }
+.badge-solid-complete { background: #16a34a; color: #fff; border: 1px solid #16a34a; }
 
 .btn {
   display: inline-flex;
@@ -961,9 +965,14 @@ body.page-exit {
 }
 .filter-chip:hover     { border-color: var(--navy-light); color: var(--navy-mid); }
 .filter-chip.active    { background: var(--navy-light); color: var(--white); border-color: var(--navy-light); }
-.filter-chip.orange.active { background: var(--orange); border-color: var(--orange); }
-.filter-chip.green.active  { background: var(--green-d); border-color: var(--green-d); }
-.filter-chip.red.active    { background: var(--red); border-color: var(--red); }
+.filter-chip.red { background: #dc2626; border-color: #dc2626; color: #fff; }
+.filter-chip.orange { background: #f97316; border-color: #f97316; color: #fff; }
+.filter-chip.yellow { background: #eab308; border-color: #eab308; color: #1f2937; }
+.filter-chip.green { background: #16a34a; border-color: #16a34a; color: #fff; }
+.filter-chip.orange.active { background: #ea580c; border-color: #ea580c; }
+.filter-chip.green.active  { background: #15803d; border-color: #15803d; }
+.filter-chip.red.active    { background: #b91c1c; border-color: #b91c1c; }
+.filter-chip.yellow.active { background: #ca8a04; border-color: #ca8a04; }
 
 /* ─────────────────────────────────────────────────────────────────────
    AUDITS PAGE
@@ -1903,13 +1912,7 @@ body.page-exit {
     <div class="notif-title">🔔 Notifications</div>
     <span class="btn btn-ghost btn-sm" onclick="toggleNotif()">✕</span>
   </div>
-  <div class="notif-item">
-    <div class="notif-dot" style="background:var(--muted-l)"></div>
-    <div>
-      <div class="notif-text"><strong>No notifications yet</strong> — Updates will appear as you add obligations, tasks, and documents.</div>
-      <div class="notif-time">Just now</div>
-    </div>
-  </div>
+  <div id="notif-list"></div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════
@@ -2447,6 +2450,117 @@ const APP_STORAGE_KEYS = {
   onboardingCompleted: 'onboardingCompleted',
 };
 
+const notificationState = {
+  items: [],
+  maxItems: 20,
+};
+let registerStatusSnapshot = {};
+
+function escapeHtml(value = '') {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function getRelativeTimeLabel(isoStamp) {
+  const date = new Date(isoStamp);
+  if (Number.isNaN(date.getTime())) return 'Just now';
+  const deltaSeconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (deltaSeconds < 60) return 'Just now';
+  if (deltaSeconds < 3600) return `${Math.floor(deltaSeconds / 60)} min ago`;
+  if (deltaSeconds < 86400) return `${Math.floor(deltaSeconds / 3600)} hr ago`;
+  return `${Math.floor(deltaSeconds / 86400)} day(s) ago`;
+}
+
+function renderNotifications() {
+  const listEl = document.getElementById('notif-list');
+  if (!listEl) return;
+  if (!notificationState.items.length) {
+    listEl.innerHTML = `
+    <div class="notif-item">
+      <div class="notif-dot" style="background:var(--muted-l)"></div>
+      <div>
+        <div class="notif-text"><strong>No notifications yet</strong> — Updates will appear as you add obligations, tasks, and documents.</div>
+        <div class="notif-time">Just now</div>
+      </div>
+    </div>`;
+    return;
+  }
+
+  listEl.innerHTML = notificationState.items.map((item) => `
+    <div class="notif-item">
+      <div class="notif-dot" style="background:${item.color || 'var(--muted-l)'}"></div>
+      <div>
+        <div class="notif-text">${item.text}</div>
+        <div class="notif-time">${getRelativeTimeLabel(item.timestamp)}</div>
+      </div>
+    </div>`).join('');
+}
+
+function pushInAppNotification(message, tone = 'info') {
+  const toneColor = tone === 'warning' ? 'var(--amber)' : tone === 'error' ? 'var(--red)' : 'var(--navy-light)';
+  notificationState.items.unshift({
+    text: message,
+    color: toneColor,
+    timestamp: new Date().toISOString(),
+  });
+  if (notificationState.items.length > notificationState.maxItems) {
+    notificationState.items.length = notificationState.maxItems;
+  }
+  renderNotifications();
+}
+
+function normalizeRegisterStatusForSnapshot(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'ok') return 'complete';
+  if (normalized === 'due soon') return 'due';
+  return ['overdue', 'due', 'in_progress', 'complete'].includes(normalized) ? normalized : 'in_progress';
+}
+
+function getRegisterStatusSnapshot(rows = []) {
+  return rows.reduce((acc, row) => {
+    if (!row?.id) return acc;
+    acc[row.id] = normalizeRegisterStatusForSnapshot(row.status);
+    return acc;
+  }, {});
+}
+
+function handleRegisterStatusChangeAlerts(nextSnapshot) {
+  Object.entries(nextSnapshot).forEach(([rowId, nextStatus]) => {
+    const previousStatus = registerStatusSnapshot[rowId];
+    if (previousStatus === nextStatus) return;
+    if (!['overdue', 'due'].includes(nextStatus)) return;
+    const obligation = DATA.register.find((row) => row.id === rowId);
+    if (!obligation) return;
+    const statusLabel = nextStatus === 'overdue' ? 'Overdue' : 'Due Soon';
+    const alertMessage = `🔔 ${escapeHtml(obligation.name || 'Obligation')} changed to ${statusLabel}.`;
+    pushInAppNotification(alertMessage, nextStatus === 'overdue' ? 'error' : 'warning');
+    showToast(`${obligation.name || 'Obligation'} is now ${statusLabel}`, nextStatus === 'overdue' ? 'error' : 'warning');
+  });
+}
+
+
+function isValidPage(page) {
+  return ['dashboard', 'register', 'audits', 'actions', 'people', 'docs', 'settings'].includes(page);
+}
+
+function getStoredPage() {
+  const savedPage = localStorage.getItem(APP_STORAGE_KEYS.currentPage);
+  return isValidPage(savedPage) ? savedPage : 'dashboard';
+}
+
+function hasCompletedOnboarding() {
+  if (localStorage.getItem(APP_STORAGE_KEYS.onboardingCompleted) === '1') return true;
+  return Boolean(plantState.plantName || plantState.city || plantState.state);
+}
+
+function markOnboardingCompleted() {
+  localStorage.setItem(APP_STORAGE_KEYS.onboardingCompleted, '1');
+}
+
 
 function isValidPage(page) {
   return ['dashboard', 'register', 'audits', 'actions', 'people', 'docs', 'settings'].includes(page);
@@ -2496,14 +2610,18 @@ function loadAppDataFromStorage() {
   DATA.docs = loadCollectionFromStorage(APP_STORAGE_KEYS.documents, []).map(normalizeDocumentRecord);
   DATA.audits = loadCollectionFromStorage(APP_STORAGE_KEYS.checklists, []);
   DATA.register = loadCollectionFromStorage(APP_STORAGE_KEYS.register, []);
+  registerStatusSnapshot = getRegisterStatusSnapshot(DATA.register);
 }
 
 function saveAppDataToStorage() {
+  const nextRegisterStatusSnapshot = getRegisterStatusSnapshot(DATA.register);
+  handleRegisterStatusChangeAlerts(nextRegisterStatusSnapshot);
   localStorage.setItem(APP_STORAGE_KEYS.employees, JSON.stringify(DATA.people));
   localStorage.setItem(APP_STORAGE_KEYS.tasks, JSON.stringify(DATA.actions));
   localStorage.setItem(APP_STORAGE_KEYS.documents, JSON.stringify(DATA.docs));
   localStorage.setItem(APP_STORAGE_KEYS.checklists, JSON.stringify(DATA.audits));
   localStorage.setItem(APP_STORAGE_KEYS.register, JSON.stringify(DATA.register));
+  registerStatusSnapshot = nextRegisterStatusSnapshot;
 }
 
 
@@ -2975,12 +3093,12 @@ function getRegisterStatusKey(status) {
   return ['overdue', 'due', 'in_progress', 'complete'].includes(normalized) ? normalized : 'in_progress';
 }
 
-function getRegisterStatusMeta(status, daysLeft = 0) {
+function getRegisterStatusMeta(status) {
   const key = getRegisterStatusKey(status);
-  if (key === 'overdue') return { key, chip: 'badge-overdue', text: `OVERDUE${daysLeft ? ` · ${Math.abs(daysLeft)}d` : ''}` };
-  if (key === 'due') return { key, chip: 'badge-due', text: daysLeft > 0 ? `DUE IN ${daysLeft}d` : 'DUE SOON' };
-  if (key === 'complete') return { key, chip: 'badge-ok', text: 'COMPLETE' };
-  return { key, chip: 'badge-info', text: 'IN PROGRESS' };
+  if (key === 'overdue') return { key, chip: 'badge-solid-overdue', text: 'Overdue' };
+  if (key === 'due') return { key, chip: 'badge-solid-due', text: 'Due' };
+  if (key === 'complete') return { key, chip: 'badge-solid-complete', text: 'Completed' };
+  return { key, chip: 'badge-solid-progress', text: 'In Progress' };
 }
 
 function getRegisterProgress(status) {
@@ -3005,6 +3123,8 @@ function getRegisterRows() {
     rows = rows.filter(r =>
       (r.name || '').toLowerCase().includes(q) ||
       (r.cat || '').toLowerCase().includes(q) ||
+      (getRegisterStatusMeta(r.status).text || '').toLowerCase().includes(q) ||
+      (r.status || '').toLowerCase().includes(q) ||
       (r.law || '').toLowerCase().includes(q) ||
       (r.section || '').toLowerCase().includes(q) ||
       (r.owner || '').toLowerCase().includes(q) ||
@@ -3016,7 +3136,7 @@ function getRegisterRows() {
 
 function register() {
   const cats = ['All','Safety','Labour','Environment','Tax','Certification','Factory'];
-  const statuses = ['All','overdue','due','in_progress','complete'];
+  const statusFilters = [{ key:'overdue', label:'Overdue', color:'red', bg:'#dc2626', activeBg:'#b91c1c', text:'#fff' }, { key:'due', label:'Due', color:'orange', bg:'#f97316', activeBg:'#ea580c', text:'#fff' }, { key:'in_progress', label:'In Progress', color:'yellow', bg:'#eab308', activeBg:'#ca8a04', text:'#1f2937' }, { key:'complete', label:'Completed', color:'green', bg:'#16a34a', activeBg:'#15803d', text:'#fff' }];
   return `
   <div class="fade-up">
     <div class="page-header">
@@ -3025,7 +3145,7 @@ function register() {
         <div class="page-sub">All obligations · ${DATA.register.length} items · ${getActivePlantLocation() || getActivePlantName()}</div>
       </div>
       <div style="display:flex;gap:10px">
-        <button class="btn btn-secondary" onclick="exportReport()">📤 Export</button>
+        <button class="btn btn-secondary" onclick="exportReport()">Export</button>
         <button class="btn btn-primary" onclick="showToast('Add obligation form — coming soon','info')">+ Add obligation</button>
       </div>
     </div>
@@ -3035,8 +3155,24 @@ function register() {
       ${cats.map(c => `<div class="filter-chip ${activeFilters.cat===c?'active':''}" onclick="filterRegister('cat','${c}')">${c}</div>`).join('')}
       <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
       <span style="font-family:var(--font-m);font-size:11px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase">Status:</span>
-      ${statuses.filter(s => s !== 'All').map(s => `<div class="filter-chip ${activeFilters.status===s?'active':''}" onclick="filterRegister('status','${s}')">${s.replace('_',' ').toUpperCase()}</div>`).join('')}
+      ${statusFilters.map(s => `<div class="filter-chip ${s.color} ${activeFilters.status===s.key?'active':''}" style="background:${activeFilters.status===s.key ? s.activeBg : s.bg};border-color:${activeFilters.status===s.key ? s.activeBg : s.bg};color:${s.text}" onclick="filterRegister('status','${s.key}')">${s.label}</div>`).join('')}
       <div class="filter-chip ${activeFilters.status==='All'&&activeFilters.cat==='All'?'active':''}" onclick="filterRegister('all','All')">Clear filters</div>
+    </div>
+    <div class="card" style="margin:10px 0 12px 0;padding:12px 14px">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <span style="font-family:var(--font-m);font-size:11px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase">Search</span>
+        <input
+          id="register-search"
+          type="text"
+          value="${escapeHtml(activeSearchQuery)}"
+          placeholder="Search by obligation name, category, or status…"
+          oninput="searchRegister(this.value)"
+          style="flex:1;min-width:240px;border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-family:var(--font-r);font-size:13px;background:#fff;color:var(--charcoal)"
+        />
+        <span id="register-results-count" style="font-family:var(--font-m);font-size:11px;color:var(--muted)">
+          ${getRegisterRows().length} result(s)
+        </span>
+      </div>
     </div>
 
     <div class="card" style="padding:0;overflow:hidden">
@@ -3115,10 +3251,20 @@ function renderRegisterRows(rows) {
 function filterRegister(key, val) {
   if (key === 'all') { activeFilters = { cat:'All', status:'All' }; }
   else { activeFilters[key] = activeFilters[key] === val ? 'All' : val; }
+  showPage('register');
+}
+
+function refreshRegisterTable() {
   const rows = getRegisterRows();
   const tbody = document.getElementById('register-tbody');
+  const resultsCount = document.getElementById('register-results-count');
   if (tbody) tbody.innerHTML = renderRegisterRows(rows);
-  showPage('register');
+  if (resultsCount) resultsCount.textContent = `${rows.length} result(s)`;
+}
+
+function searchRegister(query) {
+  activeSearchQuery = (query || '').trim();
+  refreshRegisterTable();
 }
 
 function showRegisterDetail(id) {
@@ -4676,8 +4822,7 @@ function exportReport() {
 ───────────────────────────────────────────────────────── */
 function globalSearch(q) {
   activeSearchQuery = (q || '').trim();
-  const tbody = document.getElementById('register-tbody');
-  if (tbody) tbody.innerHTML = renderRegisterRows(getRegisterRows());
+  refreshRegisterTable();
   showPage('register');
 }
 
@@ -4698,6 +4843,7 @@ hydrateOnboardingPlantInputs();
 document.getElementById('new-freq').addEventListener('change', updateCustomFrequencyFields);
 resetCreateChecklistForm();
 updateSidebarBadges();
+renderNotifications();
 
 if (hasCompletedOnboarding()) {
   document.getElementById('onboard-modal').style.display = 'none';
