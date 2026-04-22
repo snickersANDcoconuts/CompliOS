@@ -2561,6 +2561,25 @@ function markOnboardingCompleted() {
   localStorage.setItem(APP_STORAGE_KEYS.onboardingCompleted, '1');
 }
 
+
+function isValidPage(page) {
+  return ['dashboard', 'register', 'audits', 'actions', 'people', 'docs', 'settings'].includes(page);
+}
+
+function getStoredPage() {
+  const savedPage = localStorage.getItem(APP_STORAGE_KEYS.currentPage);
+  return isValidPage(savedPage) ? savedPage : 'dashboard';
+}
+
+function hasCompletedOnboarding() {
+  if (localStorage.getItem(APP_STORAGE_KEYS.onboardingCompleted) === '1') return true;
+  return Boolean(plantState.plantName || plantState.city || plantState.state);
+}
+
+function markOnboardingCompleted() {
+  localStorage.setItem(APP_STORAGE_KEYS.onboardingCompleted, '1');
+}
+
 function clearLegacyTasksOnce() {
   if (localStorage.getItem(APP_STORAGE_KEYS.taskResetV1) === '1') return;
   localStorage.removeItem(APP_STORAGE_KEYS.tasks);
