@@ -2913,9 +2913,12 @@ function dashboard() {
         <div class="card-sub">Switch site context without leaving the dashboard</div>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
-        <span style="font-size:12px;color:var(--muted)">Plant:</span>
-        <select class="onboard-input" style="width:180px;margin:0" onchange="setActiveDashboardSite(this.value)">
-          ${DASHBOARD_SITES.map(site => `<option value="${site}" ${site === selectedSite ? 'selected' : ''}>${site}</option>`).join('')}
+        <span style="font-size:12px;color:var(--muted)">Fund:</span>
+        <select class="onboard-input" style="width:180px;margin:0">
+          <option>Global Macro</option>
+          <option>Equity Hedge</option>
+          <option>Event-Driven</option>
+          <option>Relative Value</option>
         </select>
       </div>
     </div>
